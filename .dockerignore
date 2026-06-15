@@ -1,0 +1,75 @@
+# Things that should NEVER end up in the docker build context (slows builds,
+# bloats images, leaks local state). Keep this aligned with .gitignore where
+# possible — extra entries below for things git tracks but docker shouldn't see.
+
+# --- VCS / GitHub metadata ---
+.git
+.gitignore
+.gitattributes
+.github
+
+# --- Python build outputs / caches ---
+__pycache__
+**/__pycache__
+*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache
+**/.pytest_cache
+.ruff_cache
+**/.ruff_cache
+*.egg-info
+build
+dist
+
+# --- Virtual environments ---
+.venv
+**/.venv
+venv
+**/venv
+server/.venv
+
+# --- IDE / editor cruft ---
+.vscode
+.idea
+*.user
+*.suo
+*.swp
+*.DS_Store
+
+# --- Tests & local-only artifacts ---
+tests
+**/*test*.py
+**/coverage.*
+.coverage
+htmlcov
+*.log
+
+# --- Azure deploy / app directories not part of the image ---
+.azure
+infra
+client
+agent_v2
+images
+.scratch
+.squad
+.copilot
+azure.yaml
+Makefile
+
+# --- Documentation / scratch ---
+*.md
+LICENSE
+
+# --- Secrets ---
+*.env
+*.pfx
+*.pem
+server/.env
+client/.env
+agent_v2/.env
+
+# --- Docker / CI ---
+Dockerfile
+.dockerignore
+docker-compose*.yml

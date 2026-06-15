@@ -1,0 +1,7 @@
+# DEPRECATED: This file is kept as a fallback only.
+# The project now uses UV — see pyproject.toml and uv.lock.
+# To install deps: cd client && uv sync
+# To run: uv run test_client.py repro
+#
+httpx>=0.27
+click>=8.1

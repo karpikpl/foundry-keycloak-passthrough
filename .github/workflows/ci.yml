@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # PR / branch builds: verify the Dockerfile builds cleanly against the
+      # runner's local docker daemon. No registry push, no buildx — buildx pulls
+      # moby/buildkit from Docker Hub which is rate-limited / flaky for
+      # unauthenticated runners. Multi-arch + push happens in release.yml.
+      - name: Build image (no push)
+        run: docker build -t mcp-oauth:ci .

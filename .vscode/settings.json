@@ -1,0 +1,23 @@
+{
+  // Workaround for VS Code issue #299599 (open, assigned to VS Code auth team):
+  // https://github.com/microsoft/vscode/issues/299599
+  //
+  // Problem: VS Code's default auth uses the OS-native MSAL broker (WAM on Windows,
+  // Keychain on macOS). When authenticating against an Entra-protected MCP server
+  // in a *custom* Entra tenant, the broker requests Microsoft Graph scopes
+  // (AADSTS65002) alongside your API scope. Microsoft blocks this because VS Code
+  // is a first-party Microsoft app requesting another first-party resource (Graph)
+  // in a third-party tenant — that requires pre-authorization Microsoft hasn't granted.
+  //
+  // Fix: "msal-no-broker" disables the native OS broker and falls back to
+  // browser-based PKCE (a pop-up browser window for sign-in). The browser flow
+  // requests ONLY your API scope — no Graph scopes injected — so the custom
+  // tenant auth succeeds.
+  //
+  // Trade-off: you lose OS-level SSO (silent sign-in via Windows Hello / Keychain).
+  // You'll get a browser pop-up once per session instead.
+  //
+  // If VS Code ignores this setting (it may be machine-scoped), add it to your
+  // user settings.json: Ctrl+Shift+P → "Open User Settings (JSON)"
+  "microsoft-authentication.implementation": "msal-no-broker"
+}

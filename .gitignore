@@ -1,0 +1,26 @@
+# Squad: ignore runtime state (logs, inbox, sessions)
+.squad/orchestration-log/
+.squad/log/
+.squad/decisions/inbox/
+.squad/sessions/
+.squad/.scratch/
+# Squad: SubSquad activation file (local to this machine)
+.squad-workstream
+
+# ARM JSON build artifacts (compiled from Bicep)
+infra/*.json
+infra/**/*.json
+
+# Local client/server environments generated from AZD outputs or local setup
+client/.env
+server/.env
+
+# VS Code MCP config generated from AZD outputs (environment-specific URLs)
+.vscode/mcp.json
+
+# Naomi debug artifacts
+.azure-debug*/
+server/__pycache__/
+.squad/
+agent_v2/.env
+__pycache__/

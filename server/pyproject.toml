@@ -1,0 +1,25 @@
+[project]
+name = "cloud-helper-fastmcp"
+version = "0.1.0"
+description = "FastMCP RS-mode server for MCP OAuth repro/fix"
+requires-python = ">=3.12"
+dependencies = [
+    # FastMCP provides the MCP server, protected-resource metadata routes,
+    # and JWT bearer auth integration points we use for direct Entra auth.
+    "fastmcp>=3.2",
+    "pydantic-settings>=2.0",
+    "uvicorn[standard]>=0.29",
+]
+
+[project.scripts]
+cloud-helper-fastmcp = "server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+include = ["*.py"]
+
+[tool.uv]
+package = true

@@ -1,0 +1,14 @@
+[project]
+name = "agent-v2"
+version = "0.1.0"
+description = "Azure AI Foundry agent with MCP tool and Entra Identity Passthrough"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.13.5",
+    "azure-ai-projects>=2.1.0",
+    "azure-identity>=1.25.3",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+agent = "agent:main"
