@@ -133,3 +133,14 @@ output APPLICATION_INSIGHTS_CONNECTION_STRING string = useExistingAppInsights
 output APPLICATION_INSIGHTS_INSTRUMENTATION_KEY string = useExistingAppInsights
   ? existingApplicationInsightsResource.?properties.InstrumentationKey ?? ''
   : newApplicationInsightsResource.?properties.InstrumentationKey ?? ''
+
+@description('Workspace ID (a.k.a. customerId) — needed by Azure Container Apps environments.')
+output LOG_ANALYTICS_CUSTOMER_ID string = useExistingLogAnalytics
+  ? existingLogAnalyticsResource.properties.customerId
+  : newLogAnalyticsResource.properties.customerId
+
+@description('Primary shared key for the Log Analytics workspace — required by ACA environments.')
+@secure()
+output LOG_ANALYTICS_PRIMARY_SHARED_KEY string = useExistingLogAnalytics
+  ? existingLogAnalyticsResource.listKeys().primarySharedKey
+  : newLogAnalyticsResource.listKeys().primarySharedKey

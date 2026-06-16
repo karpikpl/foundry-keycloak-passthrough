@@ -3,19 +3,22 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime configuration for the FastMCP protected resource."""
+    """Runtime configuration for the FastMCP protected resource.
 
-    tenant_id: str = Field(
-        validation_alias=AliasChoices("TENANT_ID", "AZURE_TENANT_ID")
-    )
+    This server validates JWTs issued by a Keycloak realm. Entra ID is
+    federated *into* Keycloak via an OIDC identity provider broker, so the
+    MCP server never talks to Entra directly — it only trusts Keycloak.
+    """
+
+    keycloak_base_url: str = Field(alias="KEYCLOAK_BASE_URL")
+    keycloak_realm: str = Field(default="mcp-demo", alias="KEYCLOAK_REALM")
     client_id: str = Field(alias="CLIENT_ID")
     audience: str | None = Field(default=None, alias="AUDIENCE")
-    resource_app_id: str | None = Field(default=None, alias="RESOURCE_APP_ID")
     resource_host: str = Field(alias="RESOURCE_HOST")
     port: int = Field(default=8000, alias="PORT")
 
@@ -27,42 +30,41 @@ class Settings(BaseSettings):
 
     @property
     def resolved_audience(self) -> str:
-        """Primary audience value configured for this resource server."""
         return self.audience or self.client_id
 
     @property
     def jwt_audience(self) -> str | list[str]:
-        """Audience value(s) accepted when validating Entra access tokens.
+        """Audience values accepted when validating Keycloak access tokens.
 
-        Tokens may be issued for either the https Application ID URI (when the
-        client uses the RFC 8707 resource indicator) or the api:// URI (when
-        Foundry or other callers request the scope directly without a resource
-        parameter).  Accept both so neither path breaks.
+        The Keycloak client adds an audience mapper so its own client_id is
+        included in the `aud` claim; we also accept the resource URL form
+        if a caller used RFC 8707 resource indicators.
         """
-        audiences: list[str] = [f"{self.resource_url}/mcp"]
-        if self.audience:
-            audiences.append(self.audience)
-        if self.resource_app_id:
-            audiences.append(self.resource_app_id)
+        audiences: list[str] = [self.resolved_audience]
+        rfc8707 = f"{self.resource_url}/mcp"
+        if rfc8707 not in audiences:
+            audiences.append(rfc8707)
         return audiences if len(audiences) > 1 else audiences[0]
 
     @property
     def scope_resource(self) -> str:
-        """Resource prefix used to advertise the mcp.access scope.
-
-        Must match the https Application ID URI registered in Entra so that
-        FastMCP's RFC 8707 resource indicator and the scope prefix agree,
-        avoiding AADSTS9010010.
-        """
         return f"{self.resource_url}/mcp"
 
     @property
     def issuer(self) -> str:
-        return f"https://login.microsoftonline.com/{self.tenant_id}/v2.0"
+        return f"{self.keycloak_base_url.rstrip('/')}/realms/{self.keycloak_realm}"
 
     @property
     def jwks_url(self) -> str:
-        return f"https://login.microsoftonline.com/{self.tenant_id}/discovery/v2.0/keys"
+        return f"{self.issuer}/protocol/openid-connect/certs"
+
+    @property
+    def authorization_url(self) -> str:
+        return f"{self.issuer}/protocol/openid-connect/auth"
+
+    @property
+    def token_url(self) -> str:
+        return f"{self.issuer}/protocol/openid-connect/token"
 
     @property
     def resource_url(self) -> str:

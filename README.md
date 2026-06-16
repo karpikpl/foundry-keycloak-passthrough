@@ -1,173 +1,125 @@
-# MCP OAuth — Entra ID Authentication & Identity Passthrough
+# MCP OAuth — Keycloak Authorization Server with Entra Federation
 
-Demonstrates a production-ready pattern for deploying a [FastMCP](https://github.com/jlowin/fastmcp) server on Azure App Service with **Microsoft Entra ID authentication**, and connecting it to clients using **OAuth 2.0 Identity Passthrough** — so every tool call is made under the caller's own identity.
+Demonstrates a [FastMCP](https://github.com/jlowin/fastmcp) server protected by
+**Keycloak as the OAuth 2.0 authorization server**, with **Microsoft Entra ID
+federated upstream** as an OIDC identity provider (Keycloak IdP broker). The
+MCP server only ever validates Keycloak-issued tokens; Entra users still sign
+in with their real corporate identity, but Keycloak is the issuer of record.
 
-## What This Shows
+Ported from
+[`foundry-entra-passthrough`](https://github.com/karpikpl/foundry-entra-passthrough)
+— the App Service, Foundry, networking, and Bicep scaffolding are reused
+verbatim; only the auth server changes.
+
+## What this shows
 
 | Client | Auth Mechanism |
 |--------|---------------|
-| VS Code MCP client | [RFC 9728 Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) — native account picker, no browser |
-| `test_client.py` | OAuth 2.0 PKCE flow — browser redirect, token introspection |
-| `agent_v2/` (Azure AI Foundry) | **Entra Identity Passthrough** via Foundry connection — agent calls MCP as the signed-in user |
+| VS Code MCP client | [RFC 9728 Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) → Keycloak realm endpoints |
+| `test_client.py` | OAuth 2.0 PKCE flow against the Keycloak realm |
+| `agent_v2/` (Azure AI Foundry) | Foundry MCP connection configured with Keycloak's auth/token URLs and `mcp-server` client credentials |
 
-In all three cases the MCP server receives a real Entra bearer token and can inspect the caller's identity (UPN, OID, tenant, scopes).
+In every case the MCP server receives a Keycloak access token. If the user
+logged in through the Entra IdP broker, the token's `sub`/`email`/`name`
+claims map back to the original Entra identity (Keycloak's default `IMPORT`
+sync mode populates them from the upstream id_token).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Microsoft Entra ID                          │
-│   App Registration: mcp-server                                  │
-│   Identifier URI:   https://<app>.azurewebsites.net/mcp         │
-│   Scope:            mcp.access                                  │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ OAuth 2.0 / OIDC
-           ┌────────────────┼────────────────┐
-           │                │                │
-    ┌──────▼──────┐  ┌──────▼──────┐  ┌─────▼──────────────────┐
-    │  VS Code    │  │ test_client │  │  Azure AI Foundry       │
-    │  (RFC 9728) │  │  (PKCE)     │  │  agent_v2 (passthrough) │
-    └──────┬──────┘  └──────┬──────┘  └─────┬──────────────────┘
-           │                │               │ Bearer token (user's identity)
-           └────────────────┴───────────────┘
-                            │
-              ┌─────────────▼─────────────┐
-              │  FastMCP Server            │
-              │  Azure App Service         │
-              │  JWT validation (Entra)    │
-              │  tools: whoami, hello      │
-              └────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Microsoft Entra ID                             │
+│   App reg: keycloak-broker-<env>  (used only by Keycloak as upstream)│
+└─────────────────────────────────┬────────────────────────────────────┘
+                                  │ OIDC (authorization code)
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  Keycloak (Azure Container Apps)                                     │
+│  Realm: mcp-demo                                                     │
+│  Backed by Azure Database for PostgreSQL (Burstable B1ms)            │
+│  Issues access_tokens with aud=mcp-server                            │
+└─────────────────────────────────┬────────────────────────────────────┘
+                                  │ OAuth 2.0 PKCE  /  Identity Passthrough
+       ┌──────────────────────────┼──────────────────────────┐
+       │                          │                          │
+  ┌────▼─────┐             ┌──────▼──────┐           ┌──────▼─────────┐
+  │ VS Code  │             │ test_client │           │  AI Foundry    │
+  │ (RFC9728)│             │  (PKCE)     │           │  Agent (passth.)│
+  └────┬─────┘             └──────┬──────┘           └──────┬─────────┘
+       └──────────────────────────┴──────────────────────────┘
+                                  │ Bearer token (Keycloak-issued)
+                                  ▼
+                  ┌────────────────────────────────┐
+                  │ FastMCP server (App Service)   │
+                  │ JWT verifier — Keycloak JWKS   │
+                  │ tools: whoami, hello           │
+                  └────────────────────────────────┘
 ```
 
-## Entra Identity Passthrough in Action
+## Why federation rather than Keycloak-local users
 
-### VS Code (RFC 9728 — native account picker)
+Entra remains the IdP of record for human identity, MFA, and lifecycle. Apps
+that need an extra layer of OAuth scope/role modeling (or that need to also
+accept non-Entra users) can delegate that to Keycloak without re-inventing
+session management or user provisioning.
 
-Add to `.vscode/mcp.json`:
+## Reused vs. new
 
-```json
-{
-  "servers": {
-    "cloud-helper": {
-      "type": "http",
-      "url": "https://<your-app>.azurewebsites.net/mcp"
-    }
-  }
-}
-```
-
-VS Code auto-discovers authentication via the server's `/.well-known/oauth-protected-resource` endpoint — no auth config needed. It uses the built-in Microsoft account picker (no browser redirect).
-
-![VS Code calling MCP whoami tool with Entra authentication](images/vscode.png)
-
-*VS Code: `whoami` returns the authenticated user's identity — Subject, Tenant, Audience, Client ID, and `mcp.access` scope — all from the native Entra token.*
-
-### Azure AI Foundry Agent (`agent_v2/`)
-
-The Foundry agent uses `MCPTool` with `project_connection_id` — Foundry fetches a **delegated token for the signed-in user** and forwards it to the MCP server automatically. No manual token acquisition.
-
-![Azure AI Foundry agent calling MCP with identity passthrough](images/foundry.png)
-
-*Foundry Playground: the `whoami` tool returns the authenticated user's Name, UPN, OID, Tenant, and scope — all from the passthrough token.*
-
-### CLI Agent (`agent_v2/agent.py`)
-
-```bash
-cd agent_v2 && uv run agent.py --prompt "say hello to World"
-```
-
-![CLI agent with Entra identity passthrough](images/agent_v2.png)
-
-*The agent creates a Foundry v2 agent, auto-approves MCP tool calls, and receives the caller's identity from the server.*
-
-### Test Client (PKCE flow)
-
-```bash
-cd client && uv run test_client.py login
-```
-
-![Test client OAuth PKCE flow](images/test-client.png)
-
-*The test client discovers auth via Protected Resource Metadata, completes a PKCE flow, and calls the MCP tools with the resulting token.*
-
-## Key Design Decisions
-
-**No OAuth proxy.** The MCP server registers directly as an Entra resource with its own `identifierUri` and `mcp.access` scope. Clients authenticate directly to Entra — no intermediary.
-
-**RFC 9728 Protected Resource Metadata.** The server exposes `/.well-known/oauth-protected-resource` so clients like VS Code auto-discover the authorization server, resource URI, and required scope.
-
-**`https://` identifier URI.** The app registration uses `https://<hostname>/mcp` (not `api://`) as the identifier URI so the `resource` parameter in OAuth requests matches the scope namespace — avoiding `AADSTS9010010`.
-
-**Identity Passthrough.** Foundry's `project_connection_id` field on `MCPTool` instructs Foundry to forward a delegated token for the current user. The MCP server validates this token and extracts the caller's identity — every tool invocation is attributable to a real user.
-
-## Repository Structure
-
-```
-├── server/           # FastMCP server (Python, App Service)
-│   ├── server.py     # MCP app + Protected Resource Metadata handler
-│   └── config.py     # Entra config (audience, scope, PRM)
-├── client/           # Test client (OAuth PKCE)
-│   └── test_client.py
-├── agent_v2/         # Azure AI Foundry agent (Identity Passthrough)
-│   └── agent.py
-├── infra/            # Bicep — App Service, Entra app reg, Foundry
-└── azure.yaml        # AZD hooks (provision connection, patch app reg)
-```
+| Reused unchanged | New / changed |
+|------------------|---------------|
+| `infra/modules/networking/*` (VNet, PE, DNS) | `infra/modules/data/postgres.bicep` |
+| `infra/modules/monitor/*`, `iam/*` | `infra/modules/apps/keycloak-aca.bicep` |
+| `infra/modules/ai/*` (Foundry account + project) | `infra/modules/appRegistrations.bicep` (rewritten — broker app only) |
+| `infra/modules/appService.bicep` (MCP host) | `server/config.py` (Keycloak issuer/JWKS) |
+| `infra/modules/apps/apps-private-link.bicep` | `scripts/postprovision.sh` (realm + IdP + client setup) |
+| `client/`, `agent_v2/`, `tests/`             | `azure.yaml` postprovision/postdeploy |
 
 ## Deploy
 
 ```bash
+azd auth login
+azd env new keycloak-dev
+
+# Required secrets — pick strong values, store via azd's encrypted env state.
+azd env set KEYCLOAK_ADMIN_PASSWORD "$(openssl rand -base64 24)"
+azd env set POSTGRES_ADMIN_PASSWORD "$(openssl rand -base64 24)"
+
 azd up
 ```
 
-After deployment, the postprovision hook:
-1. Creates the Foundry MCP connection with the correct OAuth scope
-2. Automatically registers the Foundry redirect URI in the Entra app registration
+`azd up` will:
+1. Provision VNet, Log Analytics, AI Foundry, App Service, Postgres, Keycloak ACA, and a placeholder Entra app registration.
+2. Run `scripts/postprovision.sh`:
+   - Wait for Keycloak `/realms/master` to respond.
+   - Create the `mcp-demo` realm.
+   - `az ad app credential reset` on the broker app and add the realm callback to its redirect URIs.
+   - Configure the Entra OIDC IdP inside the Keycloak realm.
+   - Create the confidential client `mcp-server` (PKCE + secret, audience mapper).
+   - Update the App Service settings (`KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `CLIENT_ID`, `AUDIENCE`).
+   - Create the Foundry MCP RemoteTool connection pointing at the Keycloak realm endpoints and feed Foundry's returned redirect URL back into the Keycloak client.
+3. Deploy the FastMCP server to App Service and run the postdeploy hook to write `client/.env` and `agent_v2/.env`.
 
-The postdeploy hook writes ready-to-use `.env` files for both `client/` and `agent_v2/`.
-
-## Local Testing
-
-**Test client** (PKCE browser flow):
-```bash
-cd client
-uv sync
-uv run test_client.py login
-```
-
-**Foundry agent** (Identity Passthrough):
-```bash
-cd agent_v2
-uv sync
-uv run agent.py --prompt "Who am I? Call the whoami tool."
-```
-
-On first run the agent opens a browser for one-time OAuth consent; subsequent runs are silent.
-
-## Container Image (GHCR)
-
-A multi-arch (linux/amd64, linux/arm64) image is published to GitHub Container Registry on every `v*.*.*` git tag:
+## Local testing
 
 ```bash
-docker pull ghcr.io/karpikpl/mcp-oauth:latest
-
-docker run --rm -p 8000:8000 \
-  -e TENANT_ID="<entra-tenant-id>" \
-  -e CLIENT_ID="<mcp-app-client-id>" \
-  -e RESOURCE_HOST="<public-hostname>" \
-  ghcr.io/karpikpl/mcp-oauth:latest
+cd client && uv sync && uv run test_client.py login
 ```
 
-`RESOURCE_HOST` must be the public hostname clients use to reach the server — it's baked into the issued audience and the `/.well-known/oauth-protected-resource` document. Cut a release with `git tag v0.1.0 && git push origin v0.1.0`; the `release.yml` workflow builds, signs (cosign keyless), and pushes with semver tags (`latest`, `0.1.0`, `0.1`, `0`).
+```bash
+cd agent_v2 && uv sync && uv run agent.py --prompt "Who am I? Call the whoami tool."
+```
+
+The first browser flow takes you to Keycloak's login page, which shows a
+"Microsoft Entra ID" button (the broker). Click it to sign in with your Entra
+account; Keycloak then mints its own token and the MCP server validates it.
 
 ## References
 
+- [Keycloak Identity Brokering](https://www.keycloak.org/docs/latest/server_admin/#_identity_broker)
 - [FastMCP](https://github.com/jlowin/fastmcp)
 - [RFC 9728 — OAuth 2.0 Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728)
-- [Azure AI Foundry — MCP RemoteTool](https://learn.microsoft.com/en-us/azure/ai-foundry/)
-- [azure-ai-projects SDK](https://pypi.org/project/azure-ai-projects/)
+- Original repo: [`foundry-entra-passthrough`](https://github.com/karpikpl/foundry-entra-passthrough)
 
 ## License
 
 MIT
-

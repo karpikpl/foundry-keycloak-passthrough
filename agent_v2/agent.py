@@ -1,5 +1,5 @@
 """
-Azure AI Foundry agent with MCP tool + OAuth Identity Passthrough.
+Azure AI Foundry agent with MCP tool + OAuth Identity Passthrough (Keycloak).
 
 Uses the azure-ai-projects v2.1.0 pattern:
   - AIProjectClient.agents.create_version() + PromptAgentDefinition
@@ -7,11 +7,13 @@ Uses the azure-ai-projects v2.1.0 pattern:
   - McpApprovalResponse loop for require_approval="always"
 
 MCPTool.project_connection_id tells Foundry to use the named connection for
-OAuth Identity Passthrough — Foundry fetches and forwards the token on behalf
-of the signed-in user. No manual token acquisition needed.
+OAuth Identity Passthrough. In this repo the connection is configured against
+the Keycloak realm endpoints — Foundry fetches a delegated token from
+Keycloak (where Entra is federated upstream as an OIDC IdP) and forwards it
+to the MCP server. The agent code itself doesn't need to know any of this.
 
 On first run the connection may require OAuth consent — the agent prints the
-consent URL and opens it in the browser automatically.  Complete the consent
+consent URL and opens it in the browser automatically. Complete the consent
 flow in the browser, then re-run the agent.
 
 Pre-requisites:
@@ -25,10 +27,10 @@ Run:
 Environment (loaded from .env or AZD env automatically):
     FOUNDRY_ENDPOINT      - full project URL:
                             https://aif-xxx.cognitiveservices.azure.com/api/projects/proj-xxx
-    MCP_SERVER_URL        - e.g. https://cloud-helper-mcp-xxx.azurewebsites.net/mcp
-    MCP_CONNECTION_NAME   - Foundry connection name (e.g. cloud-helper-mcp-xxx)
+    MCP_SERVER_URL        - e.g. https://cloud-helper-keycloak-xxx.azurewebsites.net/mcp
+    MCP_CONNECTION_NAME   - Foundry connection name (e.g. cloud-helper-keycloak-xxx)
     AGENT_MODEL           - deployment name (default: gpt-4o)
-    AGENT_NAME            - agent name in Foundry (default: mcp-agent)
+    AGENT_NAME            - agent name in Foundry (default: cloud-helper-agent)
 """
 from __future__ import annotations
 
