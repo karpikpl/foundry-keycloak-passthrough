@@ -23,4 +23,8 @@ server/.env
 server/__pycache__/
 .squad/
 agent_v2/.env
+agent_v3/.env
+agent_v3/.venv/
+agent_v3/__pycache__/
 __pycache__/
+*.pyc
