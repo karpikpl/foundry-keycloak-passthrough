@@ -1,0 +1,15 @@
+[project]
+name = "agent-v5"
+version = "0.1.0"
+description = "Foundry agent — shared agent + structured-inputs bearer for Leena.ai MCP"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.13.5",
+    "azure-ai-projects>=2.1.0",
+    "azure-identity>=1.25.3",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+agent = "agent:main"

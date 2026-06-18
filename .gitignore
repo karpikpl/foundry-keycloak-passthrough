@@ -26,5 +26,8 @@ agent_v2/.env
 agent_v3/.env
 agent_v3/.venv/
 agent_v3/__pycache__/
+agent_v5/.env
+agent_v5/.venv/
+agent_v5/__pycache__/
 __pycache__/
 *.pyc
